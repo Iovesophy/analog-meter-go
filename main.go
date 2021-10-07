@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	MeterMax  uint8         = 165
-	MeterMin                = 15
-	MeterWait time.Duration = 200
+	MeterMax uint8 = 165
+	MeterMin       = 15
 )
 
 type device struct {
@@ -33,12 +32,12 @@ type device struct {
 func (c *device) deviceSettings(firmataAdaptor *firmata.Adaptor) {
 	c.servoMotor = gpio.NewServoDriver(firmataAdaptor, "5")
 	c.ledYellow = gpio.NewLedDriver(firmataAdaptor, "3")
-	c.ledGreen = gpio.NewLedDriver(firmataAdaptor, "11")
-	c.ledBlue = gpio.NewLedDriver(firmataAdaptor, "13")
+	c.ledBlue = gpio.NewLedDriver(firmataAdaptor, "11")
+	c.ledGreen = gpio.NewLedDriver(firmataAdaptor, "13")
 }
 
 func (c *device) initMotion() {
-	c.angleBuf = 165
+	c.angleBuf = MeterMax
 	c.servoMotor.Move(c.angleBuf)
 	for i := 0; i < 5; i++ {
 		c.ledBlue.Toggle()
@@ -50,54 +49,50 @@ func (c *device) initMotion() {
 
 func (c *device) subLoop() {
 	for {
+		time.Sleep(time.Second)
 		if c.keyflag == "cpu" {
 			p, err := cpu.Percent(0, false)
 			if err != nil {
 				log.Fatal(err)
 			}
-			if p[0] != 0 {
-				angleRaw := uint8(p[0] / 100 * float64(MeterMax-MeterMin))
-				angle := MeterMax - angleRaw
-				if c.angleBuf <= angle {
-					for i := c.angleBuf; i < angle; i++ {
-						c.servoMotor.Move(i)
-						time.Sleep(time.Millisecond * 50)
-					}
-				} else if c.angleBuf >= angle {
-					for i := c.angleBuf; i > angle; i-- {
-						c.servoMotor.Move(i)
-						time.Sleep(time.Millisecond * 50)
-					}
+			angleRaw := calcAngleRaw(p[0])
+			angle := MeterMax - angleRaw
+			if c.angleBuf <= angle {
+				for i := c.angleBuf; i < angle; i++ {
+					c.servoMotor.Move(i)
+					time.Sleep(time.Millisecond * 50)
 				}
-				c.angleBuf = angle
+			} else if c.angleBuf >= angle {
+				for i := c.angleBuf; i > angle; i-- {
+					c.servoMotor.Move(i)
+					time.Sleep(time.Millisecond * 50)
+				}
 			}
-			time.Sleep(time.Millisecond * MeterWait)
+			c.angleBuf = angle
 		} else if c.keyflag == "mem" {
 			m, err := mem.VirtualMemory()
 			if err != nil {
 				log.Fatal(err)
 			}
-			if m.UsedPercent != 0 {
-				angleRaw := uint8(m.UsedPercent / 100 * float64(MeterMax-MeterMin))
-				c.servoMotor.Move(MeterMax - angleRaw)
-			}
-			time.Sleep(time.Millisecond * MeterWait)
+			angleRaw := calcAngleRaw(m.UsedPercent)
+			c.servoMotor.Move(MeterMax - angleRaw)
 		} else if c.keyflag == "disk" {
 			d, err := disk.Usage("/Volumes")
 			if err != nil {
 				log.Fatal(err)
 			}
-			if d.UsedPercent != 0 {
-				angleRaw := uint8(d.UsedPercent / 100 * float64(MeterMax-MeterMin))
-				c.servoMotor.Move(MeterMax - angleRaw)
-			}
-			time.Sleep(time.Millisecond * MeterWait)
+			angleRaw := calcAngleRaw(d.UsedPercent)
+			c.servoMotor.Move(MeterMax - angleRaw)
 		}
 	}
 }
 
+func calcAngleRaw(d float64) uint8 {
+	return uint8(d / 100 * float64(MeterMax-MeterMin))
+}
+
 func (c *device) mainLoop() {
-	firmataAdaptor := firmata.NewAdaptor("/dev/tty.usbmodem142101")
+	firmataAdaptor := firmata.NewAdaptor("/dev/tty.usbmodem141101")
 	c.deviceSettings(firmataAdaptor)
 	c.keys = keyboard.NewDriver()
 	c.keys.On(keyboard.Key, func(keydata interface{}) {
@@ -123,7 +118,7 @@ func (c *device) mainLoop() {
 			c.ledBlue.Off()
 			c.ledYellow.Off()
 			c.ledGreen.Off()
-			c.servoMotor.Move(165)
+			c.servoMotor.Move(MeterMax)
 		}
 		fmt.Println(c.keyflag)
 	})
@@ -142,6 +137,7 @@ func (c *device) mainLoop() {
 }
 
 func main() {
+	fmt.Println("start")
 	c := device{}
 	c.keyflag = "init"
 	go c.subLoop()
